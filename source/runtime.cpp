@@ -2537,6 +2537,10 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 						pass.render_target_views[render_target_count] = rtv;
 
 						const api::resource_desc res_desc = _device->get_resource_desc(render_target_texture->resource);
+						if (render_target_count == 0) {
+							pass.viewport_width = res_desc.texture.width;
+							pass.viewport_height = res_desc.texture.height;
+						}
 						render_target_formats[render_target_count] = api::format_to_default_typed(res_desc.texture.format, pass.srgb_write_enable);
 
 						if (std::find(pass.modified_resources.cbegin(), pass.modified_resources.cend(), render_target_texture->resource) == pass.modified_resources.cend())
@@ -2759,8 +2763,12 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 
 				if (!sampler_texture->semantic.empty())
 				{
-					if (sampler_texture->semantic == "COLOR")
-						srv = _effect_permutations[permutation_index].color_srv[binding.srgb];
+					if (sampler_texture->semantic == "COLOR") {
+						if (const auto it = _texture_semantic_bindings.find("COLOR"); it != _texture_semantic_bindings.end())
+							srv = binding.srgb ? it->second.second : it->second.first;
+						else
+							srv = _effect_permutations[permutation_index].color_srv[binding.srgb];
+					}
 					else if (const auto it = _texture_semantic_bindings.find(sampler_texture->semantic); it != _texture_semantic_bindings.end())
 						srv = binding.srgb ? it->second.second : it->second.first;
 					else
@@ -4265,10 +4273,9 @@ void reshade::runtime::render_technique(technique &tech, api::command_list *cmd_
 					if (tex.semantic == "COLOR")
 					{
 						const float pixel_size[4] = {
-							1.0f / _effect_permutations[permutation_index].width,
-							1.0f / _effect_permutations[permutation_index].height
+							1.0f / static_cast<float>(pass.viewport_width),
+							1.0f / static_cast<float>(pass.viewport_height)
 						};
-
 						cmd_list->push_constants(api::shader_stage::vertex | api::shader_stage::pixel, permutation.layout, 0, tex.semantic_binding * 4, 4, pixel_size);
 					}
 					else if (const auto it = _texture_semantic_bindings.find(tex.semantic); it != _texture_semantic_bindings.end())
@@ -4276,8 +4283,8 @@ void reshade::runtime::render_technique(technique &tech, api::command_list *cmd_
 						const api::resource_desc desc = _device->get_resource_desc(_device->get_resource_from_view(it->second.first));
 
 						const float pixel_size[4] = {
-							1.0f / desc.texture.width,
-							1.0f / desc.texture.height
+							1.0f / static_cast<float>(desc.texture.width),
+							1.0f / static_cast<float>(desc.texture.height)
 						};
 
 						cmd_list->push_constants(api::shader_stage::vertex | api::shader_stage::pixel, permutation.layout, 0, tex.semantic_binding * 4, 4, pixel_size);
